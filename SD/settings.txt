@@ -1,0 +1,10 @@
+SSID:YOUR_SSID_OF_WIFI
+PASS:YOUR_PASSWORD_OF_WIFI
+fontName:/font.ttf
+fontSize:32
+smallFontSize:26
+pemFileName:/pemFile.pem
+iCalendarURL:https://calendar.google.com/calendar/ical/***************
+iCalendarURL:https://calendar.google.com/calendar/ical/***************
+timezone:9.0
+// Comments
