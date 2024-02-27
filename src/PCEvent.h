@@ -14,6 +14,7 @@ class PCEvent
 {
 public:
     PCEvent(String sourceString, float toTimezone);
+    time_t getTimeT() const;
     int getYear();
     int getMonth();
     int getDay();
@@ -32,5 +33,9 @@ private:
     float timezone;
     String title;
 };
+
+
+bool operator<(const PCEvent&left, const PCEvent&right) ;
+bool operator>(const PCEvent&left, const PCEvent&right) ;
 
 #endif

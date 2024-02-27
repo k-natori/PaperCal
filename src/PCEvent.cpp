@@ -31,6 +31,12 @@ PCEvent::PCEvent(String sourceString, float toTimezone)
         }
     } while (!scanner.isAtEnd());
 }
+
+time_t PCEvent::getTimeT() const
+{
+    tm temp = startTM;
+    return mktime(&temp);
+}
 int PCEvent::getYear()
 {
     return startTM.tm_year + 1900;
@@ -87,6 +93,15 @@ double PCEvent::duration()
 String PCEvent::getTitle()
 {
     return title;
+}
+
+bool operator<(const PCEvent &left, const PCEvent &right)
+{
+    return (left.getTimeT() < right.getTimeT());
+}
+bool operator>(const PCEvent &left, const PCEvent &right)
+{
+    return (left.getTimeT() > right.getTimeT());
 }
 
 int dayOfWeek(int year, int month, int day)

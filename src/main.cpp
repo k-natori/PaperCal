@@ -270,6 +270,7 @@ void load()
     if (count > maxNumberOfRows - numberOfRows)
       count = maxNumberOfRows - numberOfRows;
   }
+  sort(std::begin(eventsToDisplay), std::end(eventsToDisplay));
 
   // draw events
   boolean boldLineDrawn = false;
@@ -363,10 +364,6 @@ void loadICalendar(String urlString)
             // discard event if not scheduled in this month to next month 
             loadingEvent = false;
             eventBlock = "";
-          }
-          else
-          {
-            Serial.println(line);
           }
         }
 
