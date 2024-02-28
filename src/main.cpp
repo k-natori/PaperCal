@@ -273,6 +273,7 @@ void load()
   sort(std::begin(eventsToDisplay), std::end(eventsToDisplay));
 
   // draw events
+  canvas.setTextColor(WHITE);
   boolean boldLineDrawn = false;
   for (int i = 0; i < count; i++)
   {
@@ -292,10 +293,11 @@ void load()
     }
   }
 
+
   // draw date footer
   canvas.setTextSize(smallFontSize);
   canvas.setCursor(8, screenHeight - (smallFontSize + 8));
-  canvas.printf("%d/%d/%d\n", year, month, day);
+  canvas.printf("%d/%d/%d", year, month, day);
 
   // draw battery bar
   float voltage = M5.getBatteryVoltage() / 1000.0;
@@ -308,9 +310,8 @@ void load()
 
   // shutdown until next day
   delay(500);
-  int sleepSeconds = 24 * 60 * 60 - (timeinfo.tm_hour * 60 * 60 + timeinfo.tm_min * 60) + 100;
-  Serial.printf("M5Paper will wake up in %d hours\n", sleepSeconds / (60 * 60));
-  M5.shutdown(sleepSeconds);
+  RTC_Time wakeUpTime = RTC_Time(0, 0, 0);
+  M5.shutdown(wakeUpTime);
 }
 
 void shutdownWithMessage(String message, int sleepDuration)
