@@ -297,7 +297,7 @@ void load()
   // draw date footer
   canvas.setTextSize(smallFontSize);
   canvas.setCursor(8, screenHeight - (smallFontSize + 8));
-  canvas.printf("%d/%d/%d", year, month, day);
+  canvas.printf("%d/%d/%d %02d:%02d:%02d", year, month, day, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
 
   // draw battery bar
   float voltage = M5.getBatteryVoltage() / 1000.0;
@@ -308,10 +308,11 @@ void load()
   canvas.pushCanvas(0, 0, UPDATE_MODE_GC16);
   loaded = true;
 
-  // shutdown until next day
+  // shutdown until next 6 hours
   delay(500);
-  RTC_Time wakeUpTime = RTC_Time(0, 0, 0);
-  M5.shutdown(wakeUpTime);
+  int nextWakeUpHour = ((timeinfo.tm_hour + 6) / 6) * 6;
+  M5.RTC.clearIRQ();
+  M5.shutdown(nextWakeUpHour * 3600 - (timeinfo.tm_hour * 3600 + timeinfo.tm_min * 60 + timeinfo.tm_sec));
 }
 
 void shutdownWithMessage(String message, int sleepDuration)
@@ -320,6 +321,7 @@ void shutdownWithMessage(String message, int sleepDuration)
   canvas.drawString(message, 8, (84 - fontSize) / 2);
   canvas.pushCanvas(0, 0, UPDATE_MODE_DU4);
   delay(500);
+  M5.RTC.clearIRQ();
   if (sleepDuration > 0)
     M5.shutdown(sleepDuration);
   else
@@ -345,11 +347,20 @@ void loadICalendar(String urlString)
     WiFiClient *stream = httpClient.getStreamPtr();
     if (httpClient.connected())
     {
+      String previousLine = "";
       String eventBlock = "";
       boolean loadingEvent = false;
       while (stream->available())
       {
         String line = stream->readStringUntil('\n');
+        if (line.indexOf(":") < 0) {
+          line = stream->readStringUntil('\n');
+          line = previousLine + line;
+          previousLine = "";
+        } else {
+          previousLine = line;
+        }
+
         if (line.startsWith("BEGIN:VEVENT"))
         { // begin VEVENT block
           loadingEvent = true;
@@ -386,6 +397,7 @@ void loadICalendar(String urlString)
             // Next month
             eventsInNextMonth.push_back(event);
           }
+          eventBlock = "";
         }
       }
     }
