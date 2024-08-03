@@ -4,8 +4,6 @@
 #include <map>
 #include <time.h>
 #include <WiFi.h>
-#include <HTTPClient.h>
-#include <WiFiClient.h>
 #include "PCEvent.h"
 
 #define screenWidth 540
@@ -19,19 +17,10 @@ int smallFontSize = 24;
 String fontName = "/font.ttf";
 String pemFileName = "/root_ca.pem";
 std::vector<String> iCalendarURLs;
-String rootCA = "";
+
 boolean loaded = false;
 boolean loginScreen = false;
-float timezone = 0;
 
-int currentYear = 0;
-int currentMonth = 0;
-int nextMonthYear = 0;
-int nextMonth = 0;
-String dateString = "";
-
-std::multimap<int, PCEvent> eventsInThisMonth;
-std::vector<PCEvent> eventsInNextMonth;
 std::vector<PCEvent> eventsToDisplay;
 
 M5EPD_Canvas canvas(&M5.EPD);
@@ -40,7 +29,6 @@ M5EPD_Canvas widthCanvas(&M5.EPD);
 // put function declarations here:
 void load();
 void shutdownWithMessage(String message, int sleepDuration);
-void loadICalendar(String urlString);
 int widthOfString(String string, int fontSize);
 
 void setup()
@@ -106,7 +94,7 @@ void setup()
           iCalendarURLs.push_back(content);
 
         else if (key == "timezone")
-          timezone = content.toFloat();
+          PCEvent::defaultTimezone = content.toFloat();
       }
     }
     settingFile.close();
@@ -127,7 +115,7 @@ void setup()
     Serial.print("\n");
 
     // Setup NTP
-    configTime(60 * 60 * timezone, 0, "ntp.nict.jp", "ntp.jst.mfeed.ad.jp");
+    configTime(60 * 60 * PCEvent::defaultTimezone, 0, "ntp.nict.jp", "ntp.jst.mfeed.ad.jp");
 
     // load font
     canvas.loadFont(fontName, SD);
@@ -140,7 +128,7 @@ void setup()
     File pemFile = SD.open(pemFileName.c_str());
     if (pemFile)
     {
-      rootCA = pemFile.readString();
+      PCEvent::setRootCA(pemFile.readString());
       pemFile.close();
       Serial.println("pem file loaded:" + pemFileName);
     }
@@ -173,28 +161,20 @@ void load()
     return;
   }
 
-  int year = timeinfo.tm_year + 1900;
-  int month = timeinfo.tm_mon + 1;
-  int day = timeinfo.tm_mday;
-  currentYear = year;
-  currentMonth = month;
-  if (currentMonth == 12)
-  {
-    nextMonthYear = currentYear + 1;
-    nextMonth = 1;
-  }
-  else
-  {
-    nextMonthYear = currentYear;
-    nextMonth = currentMonth + 1;
-  }
+  PCEvent::setTimeInfo(timeinfo);
+
+  int year = PCEvent::currentYear;
+  int month = PCEvent::currentMonth;
+  int day = PCEvent::currentDay;
 
   Serial.printf("%d/%d/%d\n", year, month, day);
 
   // Load iCalendar
   for (auto &urlString : iCalendarURLs)
   {
-    loadICalendar(urlString);
+    if (PCEvent::loadICalendar(urlString, false) != true) {
+      shutdownWithMessage("Load error", 3600);
+    }
   }
   // loadICalendar(iCalendarURL);
 
@@ -231,20 +211,15 @@ void load()
     }
 
     // draw dot
-    if (eventsInThisMonth.count(i) > 0)
+    if (PCEvent::numberOfEventsInDayOfThisMonth(i) > 0)
     {
-      canvas.fillCircle(column * columnWidth + columnWidth / 2, row * rowHeight + 10, 3, textColor);
+      canvas.fillCircle(column * columnWidth + columnWidth / 2, row * rowHeight + rowHeight - 20, 3, textColor);
 
       // add events to list
       if (i >= day)
       {
-        auto itr = eventsInThisMonth.lower_bound(i);
-        auto last = eventsInThisMonth.upper_bound(i);
-        while (itr != last)
-        {
-          eventsToDisplay.push_back(itr->second);
-          ++itr;
-        }
+        auto eventsInDay = PCEvent::eventsInDayOfThisMonth(i);
+        eventsToDisplay.insert(eventsToDisplay.begin(), eventsInDay.begin(), eventsInDay.end());
       }
     }
 
@@ -265,6 +240,7 @@ void load()
   else
   {
     // Add events for next month if rows are available
+    auto eventsInNextMonth = PCEvent::getEventsInNextMonth();
     eventsToDisplay.insert(eventsToDisplay.end(), eventsInNextMonth.begin(), eventsInNextMonth.end());
     count = eventsToDisplay.size();
     if (count > maxNumberOfRows - numberOfRows)
@@ -328,88 +304,6 @@ void shutdownWithMessage(String message, int sleepDuration)
     M5.shutdown();
 }
 
-void loadICalendar(String urlString)
-{
-  HTTPClient httpClient;
-  httpClient.begin(urlString, rootCA.c_str());
-  dateString = "";
-  String lastModified = "";
-
-  const char *headerKeys[] = {"Date", "Last-Modified"};
-  httpClient.collectHeaders(headerKeys, 1);
-
-  int result = httpClient.GET();
-  if (result == HTTP_CODE_OK)
-  {
-    dateString = httpClient.header("Date");
-    lastModified = httpClient.header("Last-Modified");
-    Serial.println("Last-Modified:" + lastModified);
-    WiFiClient *stream = httpClient.getStreamPtr();
-    if (httpClient.connected())
-    {
-      String previousLine = "";
-      String eventBlock = "";
-      boolean loadingEvent = false;
-      while (stream->available())
-      {
-        String line = stream->readStringUntil('\n');
-        if (line.indexOf(":") < 0) {
-          line = stream->readStringUntil('\n');
-          line = previousLine + line;
-          previousLine = "";
-        } else {
-          previousLine = line;
-        }
-
-        if (line.startsWith("BEGIN:VEVENT"))
-        { // begin VEVENT block
-          loadingEvent = true;
-        }
-        else if (line.startsWith("DTSTART"))
-        { // read start date
-          int position = line.indexOf(":");
-          String timeString = line.substring(position + 1);
-          timeString.trim();
-          tm timeInfo = tmFromICalDateString(timeString, timezone);
-          if (!(timeInfo.tm_year + 1900 == currentYear && timeInfo.tm_mon + 1 == currentMonth) && !(timeInfo.tm_year + 1900 == nextMonthYear && timeInfo.tm_mon + 1 == nextMonth))
-          {
-            // discard event if not scheduled in this month to next month 
-            loadingEvent = false;
-            eventBlock = "";
-          }
-        }
-
-        if (loadingEvent)
-        {
-          eventBlock += line + "\n";
-        }
-        if (loadingEvent && line.startsWith("END:VEVENT"))
-        {
-          loadingEvent = false;
-          PCEvent event = PCEvent(eventBlock, timezone);
-          if (event.getMonth() == currentMonth)
-          {
-            // Will be displayed as this month
-            eventsInThisMonth.insert(std::make_pair(event.getDay(), event));
-          }
-          else
-          {
-            // Next month
-            eventsInNextMonth.push_back(event);
-          }
-          eventBlock = "";
-        }
-      }
-    }
-    httpClient.end();
-  }
-  else
-  {
-    // HTTP Error
-    httpClient.end();
-    shutdownWithMessage("HTTP Error Code:" + result, 60*60*24);
-  }
-}
 
 int widthOfString(String string, int fontSize)
 {
